@@ -1,14 +1,27 @@
 import { useMemo } from 'react';
-import { Trophy, Lock, Sparkles } from 'lucide-react';
+import { Trophy, Lock, Sparkles, Target, Check, ArrowRight } from 'lucide-react';
 import { useReadingStore } from '@/store/useReadingStore';
+import { useNavigate } from 'react-router-dom';
 
 export default function RewardsPage() {
-  const { badges, currentUserId, getCurrentUser } = useReadingStore();
+  const navigate = useNavigate();
+  const { badges, currentUserId, getCurrentUser, getChallengesForMonth, getChallengeProgress } = useReadingStore();
   const currentUser = getCurrentUser();
+  const now = new Date();
 
   const userBadges = useMemo(
     () => badges.filter((b) => b.userId === currentUserId),
     [badges, currentUserId]
+  );
+
+  const currentMonthChallenges = useMemo(
+    () => getChallengesForMonth(now.getFullYear(), now.getMonth()),
+    [getChallengesForMonth, now.getFullYear(), now.getMonth()]
+  );
+
+  const userChallenges = useMemo(
+    () => currentMonthChallenges.filter((c) => c.userId === currentUserId),
+    [currentMonthChallenges, currentUserId]
   );
 
   const unlockedBadges = userBadges.filter((b) => b.unlocked);
@@ -19,6 +32,12 @@ export default function RewardsPage() {
   const recentBadges = [...unlockedBadges]
     .sort((a, b) => new Date(b.unlockedAt!).getTime() - new Date(a.unlockedAt!).getTime())
     .slice(0, 3);
+
+  const challengeTypeLabel: Record<string, string> = {
+    books_count: '读完书数',
+    streak_weeks: '连续打卡',
+    category_pages: '类型阅读',
+  };
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6">
@@ -91,6 +110,85 @@ export default function RewardsPage() {
           </div>
         </div>
       )}
+
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-gray-800 flex items-center gap-2">
+            <Target className="w-5 h-5 text-rose-500" />
+            本月挑战
+          </h3>
+          <button
+            onClick={() => navigate('/challenge')}
+            className="text-xs text-rose-500 font-medium hover:text-rose-600 flex items-center gap-1"
+          >
+            管理挑战 <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+        {userChallenges.length === 0 ? (
+          <div className="bg-gray-50 rounded-2xl p-8 text-center">
+            <Target className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+            <p className="text-gray-500 text-sm">这个月还没有设定挑战</p>
+            <button
+              onClick={() => navigate('/challenge')}
+              className="mt-2 text-sm text-rose-500 font-medium hover:text-rose-600"
+            >
+              去设置本月挑战
+            </button>
+          </div>
+        ) : (
+          <div className="grid md:grid-cols-2 gap-4">
+            {userChallenges.map((c) => {
+              const progress = getChallengeProgress(c);
+              const isComplete = progress >= 100 || c.completed;
+              return (
+                <div
+                  key={c.id}
+                  className={`rounded-2xl p-5 border-2 ${
+                    isComplete
+                      ? 'border-emerald-200 bg-emerald-50'
+                      : 'border-gray-100 bg-white'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3 mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${
+                        isComplete
+                          ? 'from-emerald-400 to-emerald-500'
+                          : 'from-rose-400 to-rose-500'
+                      } flex items-center justify-center`}>
+                        {isComplete ? <Check className="w-5 h-5 text-white" /> : <Target className="w-5 h-5 text-white" />}
+                      </div>
+                      <div>
+                        <p className="font-bold text-gray-800">{c.title}</p>
+                        <p className="text-xs text-gray-500">
+                          {challengeTypeLabel[c.type] || '挑战'}
+                          {c.category && ` · ${c.category}`}
+                        </p>
+                      </div>
+                    </div>
+                    <span className={`text-sm font-bold ${
+                      isComplete ? 'text-emerald-600' : 'text-rose-500'
+                    }`}>
+                      {progress}%
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-600 mb-3">{c.description}</p>
+                  <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                    <div
+                      className={`h-full bg-gradient-to-r ${
+                        isComplete
+                          ? 'from-emerald-400 to-emerald-500'
+                          : 'from-rose-400 to-rose-500'
+                      } rounded-full transition-all`}
+                      style={{ width: `${Math.min(100, progress)}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       <div>
         <h3 className="font-bold text-gray-800 mb-4">勋章墙</h3>

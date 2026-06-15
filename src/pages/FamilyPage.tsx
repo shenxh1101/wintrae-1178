@@ -1,9 +1,10 @@
 import { useNavigate } from 'react-router-dom';
 import {
-  Users, BookOpen, Flame, Clock, Trophy, ChevronRight, Sparkles, ArrowRight, BarChart3,
+  Users, BookOpen, Flame, Clock, Trophy, ChevronRight, Sparkles, ArrowRight, BarChart3, Target, Check,
 } from 'lucide-react';
 import { useReadingStore } from '@/store/useReadingStore';
 import { formatDisplayDate } from '@/utils/date';
+import { useMemo } from 'react';
 
 const colorClassMap: Record<string, string> = {
   orange: 'from-orange-400 to-orange-500',
@@ -23,10 +24,22 @@ const colorBorderMap: Record<string, string> = {
   rose: 'border-rose-200',
 };
 
+const challengeTypeConfig: Record<string, { label: string; unit: string }> = {
+  books_count: { label: '读完书数', unit: '本' },
+  streak_weeks: { label: '连续打卡', unit: '周' },
+  category_pages: { label: '类型阅读', unit: '页' },
+};
+
 export default function FamilyPage() {
   const navigate = useNavigate();
-  const { getChildSummaries, switchUser, getBookPagesReadForUser } = useReadingStore();
+  const { getChildSummaries, switchUser, getBookPagesReadForUser, getChallengesForMonth, getChallengeProgress } = useReadingStore();
   const summaries = getChildSummaries();
+
+  const now = new Date();
+  const currentMonthChallenges = useMemo(
+    () => getChallengesForMonth(now.getFullYear(), now.getMonth()),
+    [getChallengesForMonth, now.getFullYear(), now.getMonth()]
+  );
 
   const familyTotalPages = summaries.reduce((s, c) => s + c.totalPages, 0);
   const familyTotalMinutes = summaries.reduce((s, c) => s + c.totalMinutes, 0);
@@ -189,6 +202,53 @@ export default function FamilyPage() {
                     </div>
                   </div>
                 )}
+
+                {(() => {
+                  const childChallenges = currentMonthChallenges.filter((c) => c.userId === summary.user.id);
+                  if (childChallenges.length === 0) return null;
+                  return (
+                    <div className="mb-5">
+                      <h4 className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-1.5">
+                        <Target className="w-4 h-4 text-rose-500" />
+                        本月挑战
+                      </h4>
+                      <div className="space-y-2">
+                        {childChallenges.map((c) => {
+                          const progress = getChallengeProgress(c);
+                          const isComplete = progress >= 100 || c.completed;
+                          const cfg = challengeTypeConfig[c.type] || { label: '挑战', unit: '' };
+                          return (
+                            <div key={c.id} className={`flex items-center gap-3 p-3 rounded-xl ${
+                              isComplete ? 'bg-emerald-50 border border-emerald-200' : 'bg-gray-50 border border-gray-100'
+                            }`}>
+                              <div className={`w-8 h-8 rounded-lg bg-gradient-to-r ${
+                                isComplete ? 'from-emerald-400 to-emerald-500' : colorClassMap[summary.user.color]
+                              } flex items-center justify-center flex-shrink-0`}>
+                                {isComplete ? <Check className="w-4 h-4 text-white" /> : <Target className="w-4 h-4 text-white" />}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-sm font-semibold text-gray-700 truncate">{c.title}</span>
+                                  <span className={`text-xs font-bold ${
+                                    isComplete ? 'text-emerald-600' : 'text-gray-500'
+                                  }`}>{progress}%</span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1">
+                                  <div
+                                    className={`h-full rounded-full ${
+                                      isComplete ? 'bg-emerald-400' : `bg-gradient-to-r ${colorClassMap[summary.user.color]}`
+                                    } transition-all`}
+                                    style={{ width: `${Math.min(100, progress)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <div className="flex gap-2 pt-3 border-t border-gray-100">
                   <button

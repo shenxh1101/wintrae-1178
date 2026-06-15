@@ -1,9 +1,15 @@
 import { useState, useMemo } from 'react';
 import {
-  ChevronLeft, ChevronRight, Printer, BookCheck, Flame, AlertCircle, BarChart3, Clock, FileText, Award, TrendingUp,
+  ChevronLeft, ChevronRight, Printer, BookCheck, Flame, AlertCircle, BarChart3, Clock, FileText, Award, TrendingUp, Target, Check,
 } from 'lucide-react';
 import { useReadingStore, type BookProgressInfo, type ChildMonthlyReview } from '@/store/useReadingStore';
 import { formatDisplayDate, getWeekRange } from '@/utils/date';
+
+const challengeTypeLabel: Record<string, string> = {
+  books_count: '读完书数',
+  streak_weeks: '连续打卡',
+  category_pages: '类型阅读',
+};
 
 const colorClassMap: Record<string, string> = {
   orange: 'from-orange-500 to-orange-400',
@@ -133,7 +139,7 @@ function BookCard({ info, color }: { info: BookProgressInfo; color: string }) {
 }
 
 export default function MonthlyReviewPage() {
-  const { getMonthlyReview } = useReadingStore();
+  const { getMonthlyReview, getChallengesForMonth, getChallengeProgress } = useReadingStore();
   const now = new Date();
   const [viewYear, setViewYear] = useState(now.getFullYear());
   const [viewMonth, setViewMonth] = useState(now.getMonth());
@@ -141,6 +147,11 @@ export default function MonthlyReviewPage() {
   const review = useMemo(
     () => getMonthlyReview(viewYear, viewMonth),
     [viewYear, viewMonth, getMonthlyReview]
+  );
+
+  const monthChallenges = useMemo(
+    () => getChallengesForMonth(viewYear, viewMonth),
+    [viewYear, viewMonth, getChallengesForMonth]
   );
 
   const handlePrevMonth = () => {
@@ -164,7 +175,7 @@ export default function MonthlyReviewPage() {
   const handlePrint = () => window.print();
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+    <div className="max-w-6xl mx-auto px-4 py-6 space-y-6 print:block print:max-w-none print:mx-0 print:px-0">
       <div className="flex items-end justify-between flex-wrap gap-4 print:hidden">
         <div>
           <h2 className="text-2xl font-bold text-gray-800">月度复盘</h2>
@@ -325,6 +336,63 @@ export default function MonthlyReviewPage() {
                     </div>
                   )}
 
+                  {(() => {
+                    const childChallenges = monthChallenges.filter((c) => c.userId === childRev.user.id);
+                    if (childChallenges.length === 0) return null;
+                    return (
+                      <div className="mt-2">
+                        <h4 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-1.5">
+                          <Target className="w-4 h-4 text-rose-500" />
+                          本月挑战 ({childChallenges.length}项)
+                        </h4>
+                        <div className="grid md:grid-cols-2 gap-3">
+                          {childChallenges.map((c) => {
+                            const progress = getChallengeProgress(c);
+                            const isComplete = progress >= 100 || c.completed;
+                            return (
+                              <div key={c.id} className={`rounded-xl p-4 border-2 ${
+                                isComplete
+                                  ? 'border-emerald-200 bg-emerald-50'
+                                  : 'border-gray-100 bg-white'
+                              }`}>
+                                <div className="flex items-start justify-between gap-2 mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <div className={`w-8 h-8 rounded-lg bg-gradient-to-r ${
+                                      isComplete ? 'from-emerald-500 to-emerald-400' : colorClassMap[color]
+                                    } flex items-center justify-center`}>
+                                      {isComplete ? <Check className="w-4 h-4 text-white" /> : <Target className="w-4 h-4 text-white" />}
+                                    </div>
+                                    <div>
+                                      <div className="text-sm font-semibold text-gray-800">{c.title}</div>
+                                      <div className="text-xs text-gray-500">
+                                        {challengeTypeLabel[c.type] || '挑战'}
+                                        {c.category && ` · ${c.category}`}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <span className={`text-sm font-bold ${
+                                    isComplete ? 'text-emerald-600' : colorTextMap[color]
+                                  }`}>
+                                    {progress}%
+                                  </span>
+                                </div>
+                                <p className="text-xs text-gray-600 mb-2">{c.description}</p>
+                                <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                                  <div
+                                    className={`h-full bg-gradient-to-r ${
+                                      isComplete ? 'from-emerald-500 to-emerald-400' : colorClassMap[color]
+                                    } rounded-full transition-all`}
+                                    style={{ width: `${Math.min(100, progress)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {childRev.completedBooks.length === 0 && childRev.inProgressBooks.length === 0 && childRev.stuckBooks.length === 0 && (
                     <div className="text-center py-8 text-gray-400 text-sm">
                       本月还没有阅读记录，开始第一本吧！
@@ -340,10 +408,10 @@ export default function MonthlyReviewPage() {
       <style>{`
         @media print {
           @page { size: A4; margin: 12mm; }
-          body > *:not(.print\\:block) { display: none !important; }
+          body { background: #fff !important; }
           .print\\:hidden { display: none !important; }
           .print\\:block { display: block !important; }
-          html, body { background: #fff !important; }
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         }
       `}</style>
     </div>

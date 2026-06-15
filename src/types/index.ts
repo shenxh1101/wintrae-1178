@@ -113,3 +113,39 @@ export const BADGE_IDS = [
   'first-book', 'first-checkin', 'streak-7', 'streak-30',
   'pages-100', 'pages-500', 'pages-1000', 'books-3', 'excerpt-5', 'parent-10'
 ];
+
+export type ChallengeType = 'books_count' | 'streak_weeks' | 'category_pages';
+
+export interface Challenge {
+  id: string;
+  userId: string;
+  year: number;
+  month: number;
+  type: ChallengeType;
+  target: number;
+  category?: string;
+  title: string;
+  description: string;
+  completed: boolean;
+  createdAt: string;
+}
+
+export interface ChildQuarterlyReview {
+  user: UserProfile;
+  months: { year: number; month: number; totalPages: number; completedDays: number; completedBooks: number }[];
+  totalPages: number;
+  totalMinutes: number;
+  completedDays: number;
+  completedBooks: { book: Book; completedAt: string }[];
+  categoryBreakdown: { category: string; pages: number; books: number }[];
+  categoryTrend: { category: string; month1: number; month2: number; month3: number }[];
+  longestGap: { days: number; startDate: string; endDate: string } | null;
+  commonGapPeriods: { period: string; count: number }[];
+  stabilityScore: number;
+}
+
+export interface QuarterlyReview {
+  startYear: number;
+  startMonth: number;
+  children: ChildQuarterlyReview[];
+}

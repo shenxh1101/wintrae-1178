@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import {
-  BookOpen, CheckSquare, Trophy, BarChart3, Flame, CalendarDays, BookMarked, Users, Heart, LineChart,
+  BookOpen, CheckSquare, Trophy, BarChart3, Flame, CalendarDays, BookMarked, Users, Heart, LineChart, TrendingUp, Target,
 } from 'lucide-react';
 import { useReadingStore } from '@/store/useReadingStore';
 import UserSwitcher from './UserSwitcher';
@@ -12,6 +12,8 @@ export default function Navbar() {
     { path: '/family', label: '家庭', icon: Users },
     { path: '/parent', label: '陪读', icon: Heart },
     { path: '/monthly', label: '月报', icon: LineChart },
+    { path: '/quarterly', label: '季度', icon: TrendingUp },
+    { path: '/challenge', label: '挑战', icon: Target },
     { path: '/books', label: '书单', icon: BookOpen },
     { path: '/checkin', label: '打卡', icon: CheckSquare },
     { path: '/history', label: '历史', icon: CalendarDays },
@@ -21,7 +23,7 @@ export default function Navbar() {
   ];
 
   return (
-    <nav className="sticky top-0 z-40 bg-white/90 backdrop-blur-sm border-b border-orange-100 shadow-sm">
+    <nav className="sticky top-0 z-[60] bg-white/90 backdrop-blur-sm border-b border-orange-100 shadow-sm print:hidden">
       <div className="max-w-6xl mx-auto px-4">
         <div className="flex items-center justify-between h-16 gap-3">
           <div className="flex items-center gap-2 min-w-0">

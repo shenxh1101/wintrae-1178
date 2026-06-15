@@ -10,6 +10,8 @@ import ExcerptsPage from '@/pages/ExcerptsPage';
 import FamilyPage from '@/pages/FamilyPage';
 import ParentPage from '@/pages/ParentPage';
 import MonthlyReviewPage from '@/pages/MonthlyReviewPage';
+import QuarterlyPage from '@/pages/QuarterlyPage';
+import ChallengePage from '@/pages/ChallengePage';
 import { useReadingStore } from '@/store/useReadingStore';
 import { useEffect } from 'react';
 
@@ -27,6 +29,8 @@ function AppContent() {
           <Route path="/family" element={<FamilyPage />} />
           <Route path="/parent" element={<ParentPage />} />
           <Route path="/monthly" element={<MonthlyReviewPage />} />
+          <Route path="/quarterly" element={<QuarterlyPage />} />
+          <Route path="/challenge" element={<ChallengePage />} />
           <Route path="/books" element={<BooksPage />} />
           <Route path="/checkin" element={<CheckinPage />} />
           <Route path="/history" element={<HistoryPage />} />
@@ -35,7 +39,7 @@ function AppContent() {
           <Route path="/stats" element={<StatsPage />} />
         </Routes>
       </main>
-      <footer className="py-6 text-center text-sm text-gray-400">
+      <footer className="py-6 text-center text-sm text-gray-400 print:hidden">
         <p>📚 和孩子一起，让阅读成为习惯</p>
       </footer>
     </>

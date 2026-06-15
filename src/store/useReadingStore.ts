@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Book, Checkin, Excerpt, Badge, WeeklyStats, UserProfile, ParentFeedback, FeedbackType } from '@/types';
-import { BADGE_DEFINITIONS, BADGE_IDS } from '@/types';
-import { getStreakDays, getToday, getLast7Days } from '@/utils/date';
+import type { Book, Checkin, Excerpt, Badge, WeeklyStats, UserProfile, ParentFeedback, FeedbackType, Challenge, ChallengeType, QuarterlyReview } from '@/types';
+import { BADGE_DEFINITIONS, BADGE_IDS, BOOK_CATEGORIES } from '@/types';
+import { getStreakDays, getToday, getLast7Days, getWeekStart } from '@/utils/date';
 
 const generateId = (): string => Math.random().toString(36).substring(2, 11);
 
@@ -104,6 +104,15 @@ interface ReadingStore {
   getParentCommentCount: () => number;
   getUniqueDates: () => string[];
   getMonthlyReview: (year: number, month: number) => MonthlyReview;
+  getQuarterlyReview: (startYear: number, startMonth: number) => QuarterlyReview;
+
+  challenges: Challenge[];
+  addChallenge: (challenge: Omit<Challenge, 'id' | 'createdAt' | 'completed'>) => void;
+  updateChallenge: (id: string, data: Partial<Challenge>) => void;
+  removeChallenge: (id: string) => void;
+  getChallengesForUser: (userId: string) => Challenge[];
+  getChallengesForMonth: (year: number, month: number) => Challenge[];
+  getChallengeProgress: (challenge: Challenge) => number;
 }
 
 export interface BookProgressInfo {
@@ -152,6 +161,7 @@ export const useReadingStore = create<ReadingStore>()(
       badges: initializeBadgesForUser(defaultUser.id),
       newlyUnlockedBadge: null,
       parentFeedbacks: [],
+      challenges: [],
 
       addUser: (data) => {
         const uid = generateId();
@@ -182,6 +192,7 @@ export const useReadingStore = create<ReadingStore>()(
             excerpts: state.excerpts.filter((e) => e.userId !== id),
             badges: state.badges.filter((b) => b.userId !== id),
             parentFeedbacks: state.parentFeedbacks.filter((f) => f.userId !== id),
+            challenges: state.challenges.filter((c) => c.userId !== id),
           };
         });
       },
@@ -772,11 +783,226 @@ export const useReadingStore = create<ReadingStore>()(
           children: childrenReviews,
         };
       },
+
+      getQuarterlyReview: (startYear, startMonth) => {
+        const state = get();
+        const children = state.users.filter((u) => u.role === 'child');
+        const months = [];
+        for (let i = 0; i < 3; i++) {
+          const d = new Date(startYear, startMonth + i, 1);
+          months.push({ year: d.getFullYear(), month: d.getMonth() });
+        }
+
+        const daysDiff = (a: string, b: string): number => {
+          const da = new Date(a).getTime();
+          const db = new Date(b).getTime();
+          return Math.round(Math.abs(db - da) / (1000 * 60 * 60 * 24));
+        };
+
+        const childrenReviews = children.map((child) => {
+          const monthReviews = months.map((m) => {
+            const rev = get().getMonthlyReview(m.year, m.month);
+            const childRev = rev.children.find((c) => c.user.id === child.id);
+            return {
+              year: m.year,
+              month: m.month,
+              totalPages: childRev?.totalPages || 0,
+              completedDays: childRev?.completedDays || 0,
+              completedBooks: childRev?.completedBooks.length || 0,
+            };
+          });
+
+          const firstMonth = months[0];
+          const lastMonth = months[2];
+          const firstDay = `${firstMonth.year}-${String(firstMonth.month + 1).padStart(2, '0')}-01`;
+          const lastDate = new Date(lastMonth.year, lastMonth.month + 1, 0);
+          const lastDay = `${lastMonth.year}-${String(lastMonth.month + 1).padStart(2, '0')}-${String(lastDate.getDate()).padStart(2, '0')}`;
+
+          const quarterCheckins = get().getCheckinsByDateRangeForUser(firstDay, lastDay, child.id);
+          const totalPages = quarterCheckins.reduce((s, c) => s + c.pagesRead, 0);
+          const totalMinutes = Math.round(quarterCheckins.reduce((s, c) => s + c.durationSeconds, 0) / 60);
+          const completedDays = new Set(quarterCheckins.map((c) => c.date)).size;
+
+          const userBooks = state.books.filter((b) => b.userId === child.id);
+          const completedBooks: { book: Book; completedAt: string }[] = [];
+          userBooks.forEach((book) => {
+            const pagesRead = get().getBookPagesReadForUser(book.id, child.id);
+            if (pagesRead >= book.totalPages) {
+              const allCheckins = state.checkins
+                .filter((c) => c.userId === child.id && c.bookId === book.id)
+                .sort((a, b) => a.date.localeCompare(b.date));
+              let running = 0;
+              for (const c of allCheckins) {
+                running += c.pagesRead;
+                if (running >= book.totalPages) {
+                  if (c.date >= firstDay && c.date <= lastDay) {
+                    completedBooks.push({ book, completedAt: c.date });
+                  }
+                  break;
+                }
+              }
+            }
+          });
+
+          const categoryMap = new Map<string, { pages: number; books: Set<string> }>();
+          BOOK_CATEGORIES.forEach((cat) => categoryMap.set(cat, { pages: 0, books: new Set() }));
+          quarterCheckins.forEach((c) => {
+            const book = userBooks.find((b) => b.id === c.bookId);
+            if (book) {
+              const entry = categoryMap.get(book.category) || categoryMap.get('其他')!;
+              entry.pages += c.pagesRead;
+              entry.books.add(book.id);
+            }
+          });
+          const categoryBreakdown = Array.from(categoryMap.entries())
+            .map(([category, data]) => ({ category, pages: data.pages, books: data.books.size }))
+            .sort((a, b) => b.pages - a.pages)
+            .filter((c) => c.pages > 0);
+
+          const categoryTrend = BOOK_CATEGORIES.map((cat) => {
+            const month1 = monthReviews[0].totalPages > 0 ? getCategoryPagesForMonth(child.id, firstMonth.year, firstMonth.month, cat) : 0;
+            const month2 = monthReviews[1].totalPages > 0 ? getCategoryPagesForMonth(child.id, months[1].year, months[1].month, cat) : 0;
+            const month3 = monthReviews[2].totalPages > 0 ? getCategoryPagesForMonth(child.id, lastMonth.year, lastMonth.month, cat) : 0;
+            return { category: cat, month1, month2, month3 };
+          }).filter((c) => c.month1 + c.month2 + c.month3 > 0);
+
+          const sortedDates = Array.from(new Set(quarterCheckins.map((c) => c.date))).sort();
+          let longestGap: { days: number; startDate: string; endDate: string } | null = null;
+          const gapPeriods = new Map<string, number>();
+          for (let i = 1; i < sortedDates.length; i++) {
+            const gap = daysDiff(sortedDates[i - 1], sortedDates[i]);
+            if (gap > 1) {
+              const startD = new Date(sortedDates[i - 1]);
+              startD.setDate(startD.getDate() + 1);
+              const endD = new Date(sortedDates[i]);
+              endD.setDate(endD.getDate() - 1);
+              const currentGap = {
+                days: gap - 1,
+                startDate: startD.toISOString().split('T')[0],
+                endDate: endD.toISOString().split('T')[0],
+              };
+              if (!longestGap || currentGap.days > longestGap.days) {
+                longestGap = currentGap;
+              }
+              for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
+                const weekday = ['日', '一', '二', '三', '四', '五', '六'][d.getDay()];
+                const period = d.getDay() === 0 || d.getDay() === 6 ? '周末' : '周' + weekday;
+                gapPeriods.set(period, (gapPeriods.get(period) || 0) + 1);
+              }
+            }
+          }
+          const commonGapPeriods = Array.from(gapPeriods.entries())
+            .map(([period, count]) => ({ period, count }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 3);
+
+          const totalDays = daysDiff(firstDay, lastDay) + 1;
+          const stabilityScore = totalDays > 0 ? Math.round((completedDays / totalDays) * 100) : 0;
+
+          return {
+            user: child,
+            months: monthReviews,
+            totalPages,
+            totalMinutes,
+            completedDays,
+            completedBooks,
+            categoryBreakdown,
+            categoryTrend,
+            longestGap,
+            commonGapPeriods,
+            stabilityScore,
+          };
+        });
+
+        function getCategoryPagesForMonth(userId: string, year: number, month: number, category: string): number {
+          const firstD = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+          const lastDate = new Date(year, month + 1, 0);
+          const lastD = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDate.getDate()).padStart(2, '0')}`;
+          const checkins = get().getCheckinsByDateRangeForUser(firstD, lastD, userId);
+          const userBks = state.books.filter((b) => b.userId === userId);
+          return checkins
+            .filter((c) => userBks.find((b) => b.id === c.bookId)?.category === category)
+            .reduce((s, c) => s + c.pagesRead, 0);
+        }
+
+        return {
+          startYear,
+          startMonth,
+          children: childrenReviews,
+        };
+      },
+
+      addChallenge: (challenge) => {
+        const newChallenge: Challenge = {
+          ...challenge,
+          id: generateId(),
+          completed: false,
+          createdAt: new Date().toISOString(),
+        };
+        set((state) => ({ challenges: [...state.challenges, newChallenge] }));
+      },
+
+      updateChallenge: (id, data) => {
+        set((state) => ({
+          challenges: state.challenges.map((c) => (c.id === id ? { ...c, ...data } : c)),
+        }));
+      },
+
+      removeChallenge: (id) => {
+        set((state) => ({
+          challenges: state.challenges.filter((c) => c.id !== id),
+        }));
+      },
+
+      getChallengesForUser: (userId) => {
+        return get().challenges
+          .filter((c) => c.userId === userId)
+          .sort((a, b) => b.year - a.year || b.month - a.month);
+      },
+
+      getChallengesForMonth: (year, month) => {
+        return get().challenges.filter((c) => c.year === year && c.month === month);
+      },
+
+      getChallengeProgress: (challenge) => {
+        const { type, target, category, userId, year, month } = challenge;
+        const rev = get().getMonthlyReview(year, month);
+        const childRev = rev.children.find((c) => c.user.id === userId);
+        if (!childRev) return 0;
+
+        if (type === 'books_count') {
+          return Math.min(100, Math.round((childRev.completedBooks.length / target) * 100));
+        }
+        if (type === 'streak_weeks') {
+          const weekCheckins = childRev.weeklyStats.filter((w) => w.completedDays >= 1).length;
+          return Math.min(100, Math.round((weekCheckins / target) * 100));
+        }
+        if (type === 'category_pages') {
+          const userBooks = get().books.filter((b) => b.userId === userId);
+          const categoryPages = childRev.totalPages > 0
+            ? getCategoryPagesForMonthStore(userId, year, month, category || '文学小说')
+            : 0;
+          return Math.min(100, Math.round((categoryPages / target) * 100));
+        }
+        return 0;
+
+        function getCategoryPagesForMonthStore(uid: string, y: number, m: number, cat: string): number {
+          const s = get();
+          const firstD = `${y}-${String(m + 1).padStart(2, '0')}-01`;
+          const lastDate = new Date(y, m + 1, 0);
+          const lastD = `${y}-${String(m + 1).padStart(2, '0')}-${String(lastDate.getDate()).padStart(2, '0')}`;
+          const monthCheckins = s.getCheckinsByDateRangeForUser(firstD, lastD, uid);
+          const userBks = s.books.filter((b) => b.userId === uid);
+          return monthCheckins
+            .filter((c) => userBks.find((b) => b.id === c.bookId)?.category === cat)
+            .reduce((sum, c) => sum + c.pagesRead, 0);
+        }
+      },
     };
     },
     {
       name: 'family-reading-storage-v2',
-      version: 4,
+      version: 5,
       onRehydrateStorage: () => (state) => {
         state?.ensureUser();
       },
@@ -816,6 +1042,11 @@ export const useReadingStore = create<ReadingStore>()(
           }
           if (!state.parentFeedbacks) {
             state.parentFeedbacks = [];
+          }
+        }
+        if (!version || version < 5) {
+          if (!state.challenges) {
+            state.challenges = [];
           }
         }
         return state;
