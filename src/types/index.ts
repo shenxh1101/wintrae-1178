@@ -35,6 +35,7 @@ export interface Excerpt {
   id: string;
   userId: string;
   bookId: string;
+  checkinDate: string;
   content: string;
   page: string;
   createdAt: string;

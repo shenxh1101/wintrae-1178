@@ -271,8 +271,8 @@ export default function StatsPage() {
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-72 overflow-y-auto">
             {allExcerpts.slice(0, 6).map((excerpt) => {
-              const book = books.find((b) => b.id === excerpt.bookId);
-              const excerptDate = new Date(excerpt.createdAt).toISOString().split('T')[0];
+              const book = userBooks.find((b) => b.id === excerpt.bookId);
+              const excerptDate = excerpt.checkinDate;
               return (
                 <div
                   key={excerpt.id}
@@ -360,7 +360,7 @@ export default function StatsPage() {
               .sort((a, b) => b.date.localeCompare(a.date))
               .slice(0, 100)
               .map((checkin) => {
-                const book = books.find((b) => b.id === checkin.bookId);
+                const book = userBooks.find((b) => b.id === checkin.bookId);
                 return (
                   <tr key={checkin.id}>
                     <td>{formatDisplayDate(checkin.date)}</td>
@@ -383,8 +383,8 @@ export default function StatsPage() {
           <>
             <h2>✍️ 摘抄收藏（共 {allExcerpts.length} 条）</h2>
             {allExcerpts.map((excerpt) => {
-              const book = books.find((b) => b.id === excerpt.bookId);
-              const excerptDate = new Date(excerpt.createdAt).toISOString().split('T')[0];
+              const book = userBooks.find((b) => b.id === excerpt.bookId);
+              const excerptDate = excerpt.checkinDate;
               return (
                 <div key={excerpt.id} className="excerpt-item">
                   <div className="excerpt-meta" style={{ marginBottom: '8px' }}>

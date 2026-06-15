@@ -28,6 +28,21 @@ const createDefaultUser = (): UserProfile => {
   };
 };
 
+export interface ChildSummary {
+  user: UserProfile;
+  bookCount: number;
+  totalPages: number;
+  totalMinutes: number;
+  streakDays: number;
+  weeklyPages: number;
+  weeklyMinutes: number;
+  weeklyCompletedDays: number;
+  currentBooks: Book[];
+  recentBadges: Badge[];
+  unlockedCount: number;
+  totalBadgeCount: number;
+}
+
 interface ReadingStore {
   users: UserProfile[];
   currentUserId: string | null;
@@ -37,12 +52,14 @@ interface ReadingStore {
   switchUser: (id: string) => void;
   getCurrentUser: () => UserProfile | undefined;
   ensureUser: () => void;
+  getChildSummaries: () => ChildSummary[];
 
   books: Book[];
   addBook: (book: Omit<Book, 'id' | 'userId' | 'createdAt'>) => void;
   removeBook: (id: string) => void;
   updateBook: (id: string, data: Partial<Book>) => void;
   getBookPagesRead: (bookId: string) => number;
+  getBookPagesReadForUser: (bookId: string, userId: string) => number;
 
   checkins: Checkin[];
   addCheckin: (checkin: Omit<Checkin, 'id' | 'userId' | 'createdAt'>) => void;
@@ -50,21 +67,26 @@ interface ReadingStore {
   updateCheckin: (id: string, data: Partial<Checkin>) => void;
   getCheckinsByDate: (date: string) => Checkin[];
   getCheckinsByDateRange: (startDate: string, endDate: string) => Checkin[];
+  getCheckinsByDateForUser: (date: string, userId: string) => Checkin[];
   getTodayCheckins: () => Checkin[];
 
   excerpts: Excerpt[];
   addExcerpt: (excerpt: Omit<Excerpt, 'id' | 'userId' | 'createdAt'>) => void;
   removeExcerpt: (id: string) => void;
   getExcerptsFiltered: (filters?: { bookId?: string; startDate?: string; endDate?: string }) => Excerpt[];
+  getExcerptsByDate: (date: string) => Excerpt[];
 
   badges: Badge[];
   newlyUnlockedBadge: Badge | null;
   unlockBadge: (badgeKey: string) => void;
   checkAndUnlockBadges: () => void;
+  checkAndUnlockBadgesForUser: (userId: string) => void;
   clearNewlyUnlockedBadge: () => void;
 
   getStreakDays: () => number;
+  getStreakDaysForUser: (userId: string) => number;
   getWeeklyStats: () => WeeklyStats;
+  getWeeklyStatsForUser: (userId: string) => WeeklyStats;
   getMostReadBooks: () => { book: Book; totalPages: number }[];
   getCompletedBooksCount: () => number;
   getTotalPages: () => number;
@@ -150,6 +172,54 @@ export const useReadingStore = create<ReadingStore>()(
         }
       },
 
+      getChildSummaries: () => {
+        const state = get();
+        const children = state.users.filter((u) => u.role === 'child');
+        return children.map((child) => {
+          const userBooks = state.books.filter((b) => b.userId === child.id);
+          const userCheckins = state.checkins.filter((c) => c.userId === child.id);
+          const userBadges = state.badges.filter((b) => b.userId === child.id);
+          const userExcerpts = state.excerpts.filter((e) => e.userId === child.id);
+
+          const totalPages = userCheckins.reduce((s, c) => s + c.pagesRead, 0);
+          const totalMinutes = Math.round(userCheckins.reduce((s, c) => s + c.durationSeconds, 0) / 60);
+          const streakDays = get().getStreakDaysForUser(child.id);
+
+          const last7Days = getLast7Days();
+          const weekCheckins = userCheckins.filter((c) =>
+            last7Days.some((d) => d.date === c.date)
+          );
+          const weeklyPages = weekCheckins.reduce((s, c) => s + c.pagesRead, 0);
+          const weeklyMinutes = Math.round(weekCheckins.reduce((s, c) => s + c.durationSeconds, 0) / 60);
+          const weeklyCompletedDays = new Set(weekCheckins.map((c) => c.date)).size;
+
+          const currentBooks = userBooks.filter((b) => {
+            const pagesRead = get().getBookPagesReadForUser(b.id, child.id);
+            return pagesRead < b.totalPages;
+          }).slice(0, 3);
+
+          const unlockedBadges = userBadges.filter((b) => b.unlocked);
+          const recentBadges = [...unlockedBadges]
+            .sort((a, b) => new Date(b.unlockedAt!).getTime() - new Date(a.unlockedAt!).getTime())
+            .slice(0, 3);
+
+          return {
+            user: child,
+            bookCount: userBooks.length,
+            totalPages,
+            totalMinutes,
+            streakDays,
+            weeklyPages,
+            weeklyMinutes,
+            weeklyCompletedDays,
+            currentBooks,
+            recentBadges,
+            unlockedCount: unlockedBadges.length,
+            totalBadgeCount: userBadges.length,
+          };
+        });
+      },
+
       addBook: (book) => {
         let uid = get().currentUserId;
         if (!uid) {
@@ -185,6 +255,13 @@ export const useReadingStore = create<ReadingStore>()(
         const { checkins, currentUserId } = get();
         return checkins
           .filter((c) => c.bookId === bookId && c.userId === currentUserId)
+          .reduce((sum, c) => sum + c.pagesRead, 0);
+      },
+
+      getBookPagesReadForUser: (bookId, userId) => {
+        const { checkins } = get();
+        return checkins
+          .filter((c) => c.bookId === bookId && c.userId === userId)
           .reduce((sum, c) => sum + c.pagesRead, 0);
       },
 
@@ -227,6 +304,11 @@ export const useReadingStore = create<ReadingStore>()(
         );
       },
 
+      getCheckinsByDateForUser: (date, userId) => {
+        const { checkins } = get();
+        return checkins.filter((c) => c.date === date && c.userId === userId);
+      },
+
       getTodayCheckins: () => get().getCheckinsByDate(today()),
 
       addExcerpt: (excerpt) => {
@@ -246,6 +328,7 @@ export const useReadingStore = create<ReadingStore>()(
         set((state) => ({
           excerpts: state.excerpts.filter((e) => e.id !== id),
         }));
+        setTimeout(() => get().checkAndUnlockBadges(), 10);
       },
 
       getExcerptsFiltered: (filters = {}) => {
@@ -255,18 +338,23 @@ export const useReadingStore = create<ReadingStore>()(
           result = result.filter((e) => e.bookId === filters.bookId);
         }
         if (filters.startDate) {
-          result = result.filter((e) => {
-            const d = new Date(e.createdAt).toISOString().split('T')[0];
-            return d >= filters.startDate!;
-          });
+          result = result.filter((e) => e.checkinDate >= filters.startDate!);
         }
         if (filters.endDate) {
-          result = result.filter((e) => {
-            const d = new Date(e.createdAt).toISOString().split('T')[0];
-            return d <= filters.endDate!;
-          });
+          result = result.filter((e) => e.checkinDate <= filters.endDate!);
         }
-        return result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        return result.sort((a, b) => {
+          const dateCompare = b.checkinDate.localeCompare(a.checkinDate);
+          if (dateCompare !== 0) return dateCompare;
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        });
+      },
+
+      getExcerptsByDate: (date) => {
+        const { excerpts, currentUserId } = get();
+        return excerpts
+          .filter((e) => e.userId === currentUserId && e.checkinDate === date)
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       },
 
       unlockBadge: (badgeKey) => {
@@ -295,28 +383,49 @@ export const useReadingStore = create<ReadingStore>()(
         const state = get();
         const uid = state.currentUserId;
         if (!uid) return;
-        const badges = state.badges.filter((b) => b.userId === uid);
+        get().checkAndUnlockBadgesForUser(uid);
+      },
 
-        const streak = state.getStreakDays();
-        const totalPages = state.getTotalPages();
-        const completedBooks = state.getCompletedBooksCount();
-        const excerptCount = state.excerpts.filter((e) => e.userId === uid).length;
-        const parentCommentCount = state.getParentCommentCount();
-        const hasBooks = state.books.filter((b) => b.userId === uid).length > 0;
-        const hasCheckins = state.checkins.filter((c) => c.userId === uid).length > 0;
+      checkAndUnlockBadgesForUser: (userId) => {
+        const state = get();
+        const badges = state.badges.filter((b) => b.userId === userId);
+
+        const streak = get().getStreakDaysForUser(userId);
+        const userCheckins = state.checkins.filter((c) => c.userId === userId);
+        const userBooks = state.books.filter((b) => b.userId === userId);
+        const userExcerpts = state.excerpts.filter((e) => e.userId === userId);
+        const totalPages = userCheckins.reduce((s, c) => s + c.pagesRead, 0);
+        const parentCommentCount = userCheckins.filter(
+          (c) => c.parentComment && c.parentComment.trim().length > 0
+        ).length;
+
+        let completedBooks = 0;
+        userBooks.forEach((book) => {
+          const pagesRead = get().getBookPagesReadForUser(book.id, userId);
+          if (pagesRead >= book.totalPages) completedBooks++;
+        });
+
+        const hasBooks = userBooks.length > 0;
+        const hasCheckins = userCheckins.length > 0;
+        const excerptCount = userExcerpts.length;
 
         const isLocked = (id: string) => !badges.find((b) => b.id === id)?.unlocked;
 
-        if (hasBooks && isLocked('first-book')) state.unlockBadge('first-book');
-        if (hasCheckins && isLocked('first-checkin')) state.unlockBadge('first-checkin');
-        if (streak >= 7 && isLocked('streak-7')) state.unlockBadge('streak-7');
-        if (streak >= 30 && isLocked('streak-30')) state.unlockBadge('streak-30');
-        if (totalPages >= 100 && isLocked('pages-100')) state.unlockBadge('pages-100');
-        if (totalPages >= 500 && isLocked('pages-500')) state.unlockBadge('pages-500');
-        if (totalPages >= 1000 && isLocked('pages-1000')) state.unlockBadge('pages-1000');
-        if (completedBooks >= 3 && isLocked('books-3')) state.unlockBadge('books-3');
-        if (excerptCount >= 5 && isLocked('excerpt-5')) state.unlockBadge('excerpt-5');
-        if (parentCommentCount >= 10 && isLocked('parent-10')) state.unlockBadge('parent-10');
+        const prevUserId = state.currentUserId;
+        set({ currentUserId: userId });
+
+        if (hasBooks && isLocked('first-book')) get().unlockBadge('first-book');
+        if (hasCheckins && isLocked('first-checkin')) get().unlockBadge('first-checkin');
+        if (streak >= 7 && isLocked('streak-7')) get().unlockBadge('streak-7');
+        if (streak >= 30 && isLocked('streak-30')) get().unlockBadge('streak-30');
+        if (totalPages >= 100 && isLocked('pages-100')) get().unlockBadge('pages-100');
+        if (totalPages >= 500 && isLocked('pages-500')) get().unlockBadge('pages-500');
+        if (totalPages >= 1000 && isLocked('pages-1000')) get().unlockBadge('pages-1000');
+        if (completedBooks >= 3 && isLocked('books-3')) get().unlockBadge('books-3');
+        if (excerptCount >= 5 && isLocked('excerpt-5')) get().unlockBadge('excerpt-5');
+        if (parentCommentCount >= 10 && isLocked('parent-10')) get().unlockBadge('parent-10');
+
+        set({ currentUserId: prevUserId });
       },
 
       getStreakDays: () => {
@@ -325,14 +434,23 @@ export const useReadingStore = create<ReadingStore>()(
         return getStreakDays(dates);
       },
 
+      getStreakDaysForUser: (userId) => {
+        const { checkins } = get();
+        const dates = checkins.filter((c) => c.userId === userId).map((c) => c.date);
+        return getStreakDays(dates);
+      },
+
       getWeeklyStats: () => {
         const uid = get().currentUserId;
-        if (!uid)
-          return { totalPages: 0, totalMinutes: 0, completedDays: 0, completionRate: 0, dailyData: [] };
+        if (!uid) return { totalPages: 0, totalMinutes: 0, completedDays: 0, completionRate: 0, dailyData: [] };
+        return get().getWeeklyStatsForUser(uid);
+      },
+
+      getWeeklyStatsForUser: (userId) => {
         const { checkins, books } = get();
         const last7Days = getLast7Days();
         const dailyData = last7Days.map(({ date }) => {
-          const dayCheckins = checkins.filter((c) => c.date === date && c.userId === uid);
+          const dayCheckins = checkins.filter((c) => c.date === date && c.userId === userId);
           const pages = dayCheckins.reduce((sum, c) => sum + c.pagesRead, 0);
           const minutes = Math.round(dayCheckins.reduce((sum, c) => sum + c.durationSeconds, 0) / 60);
           return { date, pages, minutes };
@@ -340,7 +458,7 @@ export const useReadingStore = create<ReadingStore>()(
         const totalPages = dailyData.reduce((sum, d) => sum + d.pages, 0);
         const totalMinutes = dailyData.reduce((sum, d) => sum + d.minutes, 0);
         const completedDays = dailyData.filter((d) => d.pages > 0).length;
-        const userBooks = books.filter((b) => b.userId === uid);
+        const userBooks = books.filter((b) => b.userId === userId);
         const dailyGoalTotal = userBooks.reduce((sum, b) => sum + b.dailyGoal, 0);
         const weeklyGoal = dailyGoalTotal * 7;
         const completionRate = weeklyGoal > 0 ? Math.min(100, Math.round((totalPages / weeklyGoal) * 100)) : 0;
@@ -412,20 +530,34 @@ export const useReadingStore = create<ReadingStore>()(
     },
     {
       name: 'family-reading-storage-v2',
+      version: 3,
       onRehydrateStorage: () => (state) => {
         state?.ensureUser();
       },
-      migrate: (persistedState: any) => {
+      migrate: (persistedState: any, version: number) => {
         const state = persistedState as any;
-        if (!state.users || state.users.length === 0) {
-          const defaultUser = createDefaultUser();
-          const newBadges = initializeBadgesForUser(defaultUser.id);
-          state.users = [defaultUser];
-          state.currentUserId = defaultUser.id;
-          state.books = (state.books || []).map((b: any) => ({ ...b, userId: defaultUser.id }));
-          state.checkins = (state.checkins || []).map((c: any) => ({ ...c, userId: defaultUser.id }));
-          state.excerpts = (state.excerpts || []).map((e: any) => ({ ...e, userId: defaultUser.id }));
-          state.badges = newBadges;
+        if (!version || version < 2) {
+          if (!state.users || state.users.length === 0) {
+            const defaultUser = createDefaultUser();
+            const newBadges = initializeBadgesForUser(defaultUser.id);
+            state.users = [defaultUser];
+            state.currentUserId = defaultUser.id;
+            state.books = (state.books || []).map((b: any) => ({ ...b, userId: defaultUser.id }));
+            state.checkins = (state.checkins || []).map((c: any) => ({ ...c, userId: defaultUser.id }));
+            state.excerpts = (state.excerpts || []).map((e: any) => ({ ...e, userId: defaultUser.id }));
+            state.badges = newBadges;
+          }
+        }
+        if (!version || version < 3) {
+          if (state.excerpts) {
+            state.excerpts = state.excerpts.map((e: any) => {
+              if (!e.checkinDate) {
+                const d = new Date(e.createdAt).toISOString().split('T')[0];
+                return { ...e, checkinDate: d };
+              }
+              return e;
+            });
+          }
         }
         return state;
       },

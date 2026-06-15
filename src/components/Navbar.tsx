@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import {
-  BookOpen, CheckSquare, Trophy, BarChart3, Flame, CalendarDays, BookMarked,
+  BookOpen, CheckSquare, Trophy, BarChart3, Flame, CalendarDays, BookMarked, Users,
 } from 'lucide-react';
 import { useReadingStore } from '@/store/useReadingStore';
 import UserSwitcher from './UserSwitcher';
@@ -9,6 +9,7 @@ export default function Navbar() {
   const streakDays = useReadingStore((s) => s.getStreakDays());
 
   const navItems = [
+    { path: '/family', label: '家庭', icon: Users },
     { path: '/books', label: '书单', icon: BookOpen },
     { path: '/checkin', label: '打卡', icon: CheckSquare },
     { path: '/history', label: '历史', icon: CalendarDays },

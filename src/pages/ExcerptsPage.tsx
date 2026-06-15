@@ -1,15 +1,28 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { BookMarked, Trash2, Filter, BookOpen, Calendar } from 'lucide-react';
 import { useReadingStore } from '@/store/useReadingStore';
 import { formatDisplayDate } from '@/utils/date';
 import { BOOK_CATEGORIES } from '@/types';
 
 export default function ExcerptsPage() {
-  const { books, excerpts, getExcerptsFiltered, removeExcerpt } = useReadingStore();
+  const { books, currentUserId, excerpts, getExcerptsFiltered, removeExcerpt, getCurrentUser } = useReadingStore();
+
+  const currentUser = getCurrentUser();
+
+  const userBooks = useMemo(
+    () => books.filter((b) => b.userId === currentUserId),
+    [books, currentUserId]
+  );
 
   const [filterBookId, setFilterBookId] = useState<string>('');
   const [filterStartDate, setFilterStartDate] = useState<string>('');
   const [filterEndDate, setFilterEndDate] = useState<string>('');
+
+  useEffect(() => {
+    setFilterBookId('');
+    setFilterStartDate('');
+    setFilterEndDate('');
+  }, [currentUserId]);
 
   const filteredExcerpts = useMemo(() => {
     const filters: { bookId?: string; startDate?: string; endDate?: string } = {};
@@ -38,7 +51,10 @@ export default function ExcerptsPage() {
       <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-800">摘抄收藏夹</h2>
-          <p className="text-gray-500 mt-1">收藏书中的精彩句子，随时回顾</p>
+          <p className="text-gray-500 mt-1">
+            {currentUser?.avatar && <span className="mr-1">{currentUser.avatar}</span>}
+            {currentUser?.name || '我的'}摘抄 · 随时回顾精彩句子
+          </p>
         </div>
         <div className="px-4 py-2 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border border-emerald-200">
           <p className="text-xs text-emerald-600">已收藏</p>
@@ -69,7 +85,7 @@ export default function ExcerptsPage() {
               className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:border-emerald-300 bg-white"
             >
               <option value="">全部图书</option>
-              {books.map((b) => (
+              {userBooks.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.title}
                 </option>
@@ -155,8 +171,8 @@ export default function ExcerptsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredExcerpts.map((excerpt) => {
-            const book = books.find((b) => b.id === excerpt.bookId);
-            const excerptDate = new Date(excerpt.createdAt).toISOString().split('T')[0];
+            const book = userBooks.find((b) => b.id === excerpt.bookId);
+            const excerptDate = excerpt.checkinDate;
             return (
               <div
                 key={excerpt.id}

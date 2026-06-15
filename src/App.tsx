@@ -7,6 +7,7 @@ import RewardsPage from '@/pages/RewardsPage';
 import StatsPage from '@/pages/StatsPage';
 import HistoryPage from '@/pages/HistoryPage';
 import ExcerptsPage from '@/pages/ExcerptsPage';
+import FamilyPage from '@/pages/FamilyPage';
 import { useReadingStore } from '@/store/useReadingStore';
 import { useEffect } from 'react';
 
@@ -20,7 +21,8 @@ function AppContent() {
       <BadgeNotification />
       <main className="pb-8">
         <Routes>
-          <Route path="/" element={<Navigate to="/books" replace />} />
+          <Route path="/" element={<Navigate to="/family" replace />} />
+          <Route path="/family" element={<FamilyPage />} />
           <Route path="/books" element={<BooksPage />} />
           <Route path="/checkin" element={<CheckinPage />} />
           <Route path="/history" element={<HistoryPage />} />

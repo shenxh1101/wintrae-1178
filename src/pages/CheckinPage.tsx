@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import {
   Flame, MessageSquareHeart, Send, Calendar, Sparkles,
   ChevronLeft, ChevronRight,
@@ -20,9 +20,10 @@ export default function CheckinPage() {
     getStreakDays,
     getBookPagesRead,
     getCheckinsByDate,
+    getExcerptsByDate,
   } = useReadingStore();
 
-  const [selectedBookId, setSelectedBookId] = useState<string | null>(books[0]?.id || null);
+  const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
   const [checkinDate, setCheckinDate] = useState(getToday());
   const [pagesRead, setPagesRead] = useState('');
   const [durationSeconds, setDurationSeconds] = useState(0);
@@ -39,6 +40,27 @@ export default function CheckinPage() {
     [selectedBookId, resetCounter]
   );
 
+  const userBooks = useMemo(
+    () => books.filter((b) => b.userId === currentUserId),
+    [books, currentUserId]
+  );
+
+  useEffect(() => {
+    setSelectedBookId(userBooks[0]?.id || null);
+  }, [currentUserId, userBooks]);
+
+  useEffect(() => {
+    setPagesRead('');
+    setNote('');
+    setParentComment('');
+    setExcerptContent('');
+    setExcerptPage('');
+    setDurationSeconds(0);
+    setResetCounter((c) => c + 1);
+    setCheckinDate(getToday());
+    setShowSuccess(false);
+  }, [currentUserId]);
+
   const streakDays = getStreakDays();
   const last7Days = getLast7Days();
   const today = getToday();
@@ -46,12 +68,7 @@ export default function CheckinPage() {
 
   const dateCheckins = getCheckinsByDate(checkinDate);
   const dateExcerpts = useMemo(() => {
-    return excerpts
-      .filter((e) => {
-        const d = new Date(e.createdAt).toISOString().split('T')[0];
-        return e.userId === currentUserId && d === checkinDate;
-      })
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return getExcerptsByDate(checkinDate);
   }, [checkinDate, excerpts, currentUserId]);
 
   const resetForm = () => {
@@ -109,6 +126,7 @@ export default function CheckinPage() {
 
     addExcerpt({
       bookId: selectedBookId,
+      checkinDate: checkinDate,
       content: excerptContent.trim(),
       page: excerptPage.trim(),
     });
@@ -118,15 +136,15 @@ export default function CheckinPage() {
   };
 
   const hasCheckinOnDate = (date: string) => {
-    return checkins.some((c) => c.date === date && c.userId === useReadingStore.getState().currentUserId);
+    return checkins.some((c) => c.date === date && c.userId === currentUserId);
   };
 
-  const selectedBook = books.find((b) => b.id === selectedBookId);
+  const selectedBook = userBooks.find((b) => b.id === selectedBookId);
   const selectedBookPagesRead = selectedBook ? getBookPagesRead(selectedBook.id) : 0;
 
   const dateDayCheckins = dateCheckins as Checkin[];
 
-  if (books.length === 0) {
+  if (userBooks.length === 0) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-6">
         <div className="flex flex-col items-center justify-center py-20 text-center">
@@ -231,7 +249,7 @@ export default function CheckinPage() {
           <div className="bg-white rounded-2xl shadow-sm border border-orange-100 p-5">
             <h3 className="font-bold text-gray-800 mb-3">选择阅读的书</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-64 overflow-y-auto pr-1">
-              {books.map((book) => (
+              {userBooks.map((book) => (
                 <BookCard
                   key={book.id}
                   book={book}
@@ -357,7 +375,7 @@ export default function CheckinPage() {
             ) : (
               <div className="space-y-3 max-h-60 overflow-y-auto">
                 {dateDayCheckins.map((checkin) => {
-                  const book = books.find((b) => b.id === checkin.bookId);
+                  const book = userBooks.find((b) => b.id === checkin.bookId);
                   return (
                     <div key={checkin.id} className="p-3 bg-orange-50 rounded-xl">
                       <div className="flex items-center justify-between mb-1">
@@ -429,7 +447,7 @@ export default function CheckinPage() {
                   </p>
                 ) : (
                   dateExcerpts.map((excerpt) => {
-                    const book = books.find((b) => b.id === excerpt.bookId);
+                    const book = userBooks.find((b) => b.id === excerpt.bookId);
                     return (
                       <div key={excerpt.id} className="p-3 bg-emerald-50 rounded-lg">
                         <p className="text-xs text-gray-500 mb-1">
