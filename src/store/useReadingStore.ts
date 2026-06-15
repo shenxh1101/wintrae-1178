@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Book, Checkin, Excerpt, Badge, WeeklyStats, UserProfile } from '@/types';
+import type { Book, Checkin, Excerpt, Badge, WeeklyStats, UserProfile, ParentFeedback, FeedbackType } from '@/types';
 import { BADGE_DEFINITIONS, BADGE_IDS } from '@/types';
 import { getStreakDays, getToday, getLast7Days } from '@/utils/date';
 
@@ -55,11 +55,12 @@ interface ReadingStore {
   getChildSummaries: () => ChildSummary[];
 
   books: Book[];
-  addBook: (book: Omit<Book, 'id' | 'userId' | 'createdAt'>) => void;
+  addBook: (book: Omit<Book, 'id' | 'userId' | 'createdAt' | 'lastReadDate'>) => void;
   removeBook: (id: string) => void;
   updateBook: (id: string, data: Partial<Book>) => void;
   getBookPagesRead: (bookId: string) => number;
   getBookPagesReadForUser: (bookId: string, userId: string) => number;
+  getBookLastReadDate: (bookId: string, userId: string) => string | null;
 
   checkins: Checkin[];
   addCheckin: (checkin: Omit<Checkin, 'id' | 'userId' | 'createdAt'>) => void;
@@ -68,6 +69,7 @@ interface ReadingStore {
   getCheckinsByDate: (date: string) => Checkin[];
   getCheckinsByDateRange: (startDate: string, endDate: string) => Checkin[];
   getCheckinsByDateForUser: (date: string, userId: string) => Checkin[];
+  getCheckinsByDateRangeForUser: (startDate: string, endDate: string, userId: string) => Checkin[];
   getTodayCheckins: () => Checkin[];
 
   excerpts: Excerpt[];
@@ -75,6 +77,7 @@ interface ReadingStore {
   removeExcerpt: (id: string) => void;
   getExcerptsFiltered: (filters?: { bookId?: string; startDate?: string; endDate?: string }) => Excerpt[];
   getExcerptsByDate: (date: string) => Excerpt[];
+  getExcerptsByBookForUser: (bookId: string, userId: string) => Excerpt[];
 
   badges: Badge[];
   newlyUnlockedBadge: Badge | null;
@@ -82,6 +85,13 @@ interface ReadingStore {
   checkAndUnlockBadges: () => void;
   checkAndUnlockBadgesForUser: (userId: string) => void;
   clearNewlyUnlockedBadge: () => void;
+
+  parentFeedbacks: ParentFeedback[];
+  addParentFeedback: (fb: Omit<ParentFeedback, 'id' | 'createdAt'>) => void;
+  removeParentFeedback: (id: string) => void;
+  getFeedbacksForUser: (userId: string, filters?: { type?: FeedbackType; bookId?: string; weekStart?: string }) => ParentFeedback[];
+  getFeedbacksByWeekForUser: (weekStart: string, userId: string) => ParentFeedback[];
+  getFeedbacksByBookForUser: (bookId: string, userId: string) => ParentFeedback[];
 
   getStreakDays: () => number;
   getStreakDaysForUser: (userId: string) => number;
@@ -93,6 +103,38 @@ interface ReadingStore {
   getTotalMinutes: () => number;
   getParentCommentCount: () => number;
   getUniqueDates: () => string[];
+  getMonthlyReview: (year: number, month: number) => MonthlyReview;
+}
+
+export interface BookProgressInfo {
+  book: Book;
+  pagesRead: number;
+  lastReadDate: string | null;
+  completed: boolean;
+  completedAt: string | null;
+  stuckDays: number;
+}
+
+export interface ChildMonthlyReview {
+  user: UserProfile;
+  totalPages: number;
+  totalMinutes: number;
+  completedDays: number;
+  totalCheckins: number;
+  completedBooks: BookProgressInfo[];
+  inProgressBooks: BookProgressInfo[];
+  stuckBooks: BookProgressInfo[];
+  weeklyStats: { weekStart: string; pages: number; completedDays: number }[];
+  mostStableWeek: { weekStart: string; completedDays: number } | null;
+}
+
+export interface MonthlyReview {
+  year: number;
+  month: number;
+  familyTotalPages: number;
+  familyTotalMinutes: number;
+  familyTotalCheckins: number;
+  children: ChildMonthlyReview[];
 }
 
 const today = () => getToday();
@@ -109,6 +151,7 @@ export const useReadingStore = create<ReadingStore>()(
       excerpts: [],
       badges: initializeBadgesForUser(defaultUser.id),
       newlyUnlockedBadge: null,
+      parentFeedbacks: [],
 
       addUser: (data) => {
         const uid = generateId();
@@ -138,6 +181,7 @@ export const useReadingStore = create<ReadingStore>()(
             checkins: state.checkins.filter((c) => c.userId !== id),
             excerpts: state.excerpts.filter((e) => e.userId !== id),
             badges: state.badges.filter((b) => b.userId !== id),
+            parentFeedbacks: state.parentFeedbacks.filter((f) => f.userId !== id),
           };
         });
       },
@@ -193,10 +237,28 @@ export const useReadingStore = create<ReadingStore>()(
           const weeklyMinutes = Math.round(weekCheckins.reduce((s, c) => s + c.durationSeconds, 0) / 60);
           const weeklyCompletedDays = new Set(weekCheckins.map((c) => c.date)).size;
 
-          const currentBooks = userBooks.filter((b) => {
-            const pagesRead = get().getBookPagesReadForUser(b.id, child.id);
-            return pagesRead < b.totalPages;
-          }).slice(0, 3);
+          const booksWithMeta = userBooks
+            .map((b) => {
+              const pagesRead = get().getBookPagesReadForUser(b.id, child.id);
+              const lastRead = get().getBookLastReadDate(b.id, child.id);
+              return {
+                ...b,
+                lastReadDate: lastRead,
+                _pagesRead: pagesRead,
+                _inProgress: pagesRead < b.totalPages,
+              };
+            })
+            .sort((a, b) => {
+              const aDate = a.lastReadDate || '0000-00-00';
+              const bDate = b.lastReadDate || '0000-00-00';
+              if (bDate !== aDate) return bDate.localeCompare(aDate);
+              return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+            });
+
+          const inProgressBooks = booksWithMeta.filter((b) => b._inProgress);
+          const currentBooks = (inProgressBooks.length > 0 ? inProgressBooks : booksWithMeta)
+            .slice(0, 3)
+            .map(({ _pagesRead, _inProgress, ...rest }) => rest);
 
           const unlockedBadges = userBadges.filter((b) => b.unlocked);
           const recentBadges = [...unlockedBadges]
@@ -231,6 +293,7 @@ export const useReadingStore = create<ReadingStore>()(
           ...book,
           id: generateId(),
           userId: uid,
+          lastReadDate: null,
           createdAt: new Date().toISOString(),
         };
         set((state) => ({ books: [...state.books, newBook] }));
@@ -265,6 +328,13 @@ export const useReadingStore = create<ReadingStore>()(
           .reduce((sum, c) => sum + c.pagesRead, 0);
       },
 
+      getBookLastReadDate: (bookId, userId) => {
+        const { checkins } = get();
+        const bookCheckins = checkins.filter((c) => c.bookId === bookId && c.userId === userId);
+        if (bookCheckins.length === 0) return null;
+        return bookCheckins.reduce((latest, c) => (c.date > latest ? c.date : latest), '0000-00-00');
+      },
+
       addCheckin: (checkin) => {
         const uid = get().currentUserId;
         if (!uid) return;
@@ -274,7 +344,17 @@ export const useReadingStore = create<ReadingStore>()(
           userId: uid,
           createdAt: new Date().toISOString(),
         };
-        set((state) => ({ checkins: [...state.checkins, newCheckin] }));
+        set((state) => ({
+          checkins: [...state.checkins, newCheckin],
+          books: state.books.map((b) => {
+            if (b.id === checkin.bookId && b.userId === uid) {
+              const newDate = checkin.date;
+              const oldDate = b.lastReadDate || '';
+              return newDate > oldDate ? { ...b, lastReadDate: newDate } : b;
+            }
+            return b;
+          }),
+        }));
         setTimeout(() => get().checkAndUnlockBadges(), 10);
       },
 
@@ -307,6 +387,13 @@ export const useReadingStore = create<ReadingStore>()(
       getCheckinsByDateForUser: (date, userId) => {
         const { checkins } = get();
         return checkins.filter((c) => c.date === date && c.userId === userId);
+      },
+
+      getCheckinsByDateRangeForUser: (startDate, endDate, userId) => {
+        const { checkins } = get();
+        return checkins.filter(
+          (c) => c.userId === userId && c.date >= startDate && c.date <= endDate
+        );
       },
 
       getTodayCheckins: () => get().getCheckinsByDate(today()),
@@ -355,6 +442,46 @@ export const useReadingStore = create<ReadingStore>()(
         return excerpts
           .filter((e) => e.userId === currentUserId && e.checkinDate === date)
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      },
+
+      getExcerptsByBookForUser: (bookId, userId) => {
+        const { excerpts } = get();
+        return excerpts
+          .filter((e) => e.userId === userId && e.bookId === bookId)
+          .sort((a, b) => b.checkinDate.localeCompare(a.checkinDate));
+      },
+
+      addParentFeedback: (fb) => {
+        if (!fb.userId || !fb.content.trim()) return;
+        const newFb: ParentFeedback = {
+          ...fb,
+          id: generateId(),
+          createdAt: new Date().toISOString(),
+        };
+        set((state) => ({ parentFeedbacks: [...state.parentFeedbacks, newFb] }));
+      },
+
+      removeParentFeedback: (id) => {
+        set((state) => ({
+          parentFeedbacks: state.parentFeedbacks.filter((f) => f.id !== id),
+        }));
+      },
+
+      getFeedbacksForUser: (userId, filters = {}) => {
+        const { parentFeedbacks } = get();
+        let result = parentFeedbacks.filter((f) => f.userId === userId);
+        if (filters.type) result = result.filter((f) => f.type === filters.type);
+        if (filters.bookId) result = result.filter((f) => f.bookId === filters.bookId);
+        if (filters.weekStart) result = result.filter((f) => f.weekStart === filters.weekStart);
+        return result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      },
+
+      getFeedbacksByWeekForUser: (weekStart, userId) => {
+        return get().getFeedbacksForUser(userId, { weekStart });
+      },
+
+      getFeedbacksByBookForUser: (bookId, userId) => {
+        return get().getFeedbacksForUser(userId, { bookId });
       },
 
       unlockBadge: (badgeKey) => {
@@ -526,11 +653,130 @@ export const useReadingStore = create<ReadingStore>()(
         });
         return Array.from(dates).sort().reverse();
       },
+
+      getMonthlyReview: (year, month) => {
+        const state = get();
+        const children = state.users.filter((u) => u.role === 'child');
+        const firstDay = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+        const lastDate = new Date(year, month + 1, 0);
+        const lastDay = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDate.getDate()).padStart(2, '0')}`;
+        const todayStr = today();
+
+        const getWeekStart = (dateStr: string): string => {
+          const d = new Date(dateStr);
+          const day = d.getDay();
+          const diff = day === 0 ? 6 : day - 1;
+          d.setDate(d.getDate() - diff);
+          return d.toISOString().split('T')[0];
+        };
+
+        const daysDiff = (a: string, b: string): number => {
+          const da = new Date(a).getTime();
+          const db = new Date(b).getTime();
+          return Math.round(Math.abs(db - da) / (1000 * 60 * 60 * 24));
+        };
+
+        const childrenReviews = children.map((child) => {
+          const userBooks = state.books.filter((b) => b.userId === child.id);
+          const monthCheckins = get().getCheckinsByDateRangeForUser(firstDay, lastDay, child.id);
+          const totalPages = monthCheckins.reduce((s, c) => s + c.pagesRead, 0);
+          const totalMinutes = Math.round(monthCheckins.reduce((s, c) => s + c.durationSeconds, 0) / 60);
+          const completedDays = new Set(monthCheckins.map((c) => c.date)).size;
+
+          const weekMap = new Map<string, { pages: number; completedDays: number; days: Set<string> }>();
+          monthCheckins.forEach((c) => {
+            const ws = getWeekStart(c.date);
+            const entry = weekMap.get(ws) || { pages: 0, completedDays: 0, days: new Set<string>() };
+            entry.pages += c.pagesRead;
+            if (!entry.days.has(c.date)) {
+              entry.completedDays += 1;
+              entry.days.add(c.date);
+            }
+            weekMap.set(ws, entry);
+          });
+          const weeklyStats = Array.from(weekMap.entries())
+            .map(([weekStart, data]) => ({ weekStart, pages: data.pages, completedDays: data.completedDays }))
+            .sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+          const mostStableWeek = weeklyStats.length > 0
+            ? weeklyStats.reduce((best, w) => (w.completedDays > best.completedDays ? w : best), weeklyStats[0])
+            : null;
+
+          const booksProgress: BookProgressInfo[] = userBooks.map((book) => {
+            const pagesRead = get().getBookPagesReadForUser(book.id, child.id);
+            const lastRead = get().getBookLastReadDate(book.id, child.id);
+            const completed = pagesRead >= book.totalPages;
+            let completedAt: string | null = null;
+            if (completed) {
+              let runningTotal = 0;
+              const sortedCheckins = [...monthCheckins.filter((c) => c.bookId === book.id),
+                ...state.checkins.filter((c) => c.userId === child.id && c.bookId === book.id && c.date < firstDay)
+              ].sort((a, b) => a.date.localeCompare(b.date));
+              for (const c of sortedCheckins) {
+                runningTotal += c.pagesRead;
+                if (runningTotal >= book.totalPages) {
+                  completedAt = c.date;
+                  break;
+                }
+              }
+            }
+            let stuckDays = 0;
+            if (!completed && pagesRead > 0 && lastRead) {
+              stuckDays = daysDiff(lastRead, todayStr);
+            }
+            return { book, pagesRead, lastReadDate: lastRead, completed, completedAt, stuckDays };
+          });
+
+          const completedBooks = booksProgress
+            .filter((b) => b.completed && b.completedAt && b.completedAt >= firstDay && b.completedAt <= lastDay)
+            .sort((a, b) => (a.completedAt || '').localeCompare(b.completedAt || ''));
+
+          const inProgressBooks = booksProgress
+            .filter((b) => !b.completed && b.pagesRead > 0)
+            .sort((a, b) => b.pagesRead - a.pagesRead);
+
+          const stuckBooks = booksProgress
+            .filter((b) => !b.completed && b.pagesRead > 0 && b.stuckDays >= 7)
+            .sort((a, b) => b.stuckDays - a.stuckDays);
+
+          return {
+            user: child,
+            totalPages,
+            totalMinutes,
+            completedDays,
+            totalCheckins: monthCheckins.length,
+            completedBooks,
+            inProgressBooks,
+            stuckBooks,
+            weeklyStats,
+            mostStableWeek: mostStableWeek
+              ? { weekStart: mostStableWeek.weekStart, completedDays: mostStableWeek.completedDays }
+              : null,
+          };
+        });
+
+        let familyTotalPages = 0;
+        let familyTotalMinutes = 0;
+        let familyTotalCheckins = 0;
+        childrenReviews.forEach((c) => {
+          familyTotalPages += c.totalPages;
+          familyTotalMinutes += c.totalMinutes;
+          familyTotalCheckins += c.totalCheckins;
+        });
+
+        return {
+          year,
+          month,
+          familyTotalPages,
+          familyTotalMinutes,
+          familyTotalCheckins,
+          children: childrenReviews,
+        };
+      },
     };
     },
     {
       name: 'family-reading-storage-v2',
-      version: 3,
+      version: 4,
       onRehydrateStorage: () => (state) => {
         state?.ensureUser();
       },
@@ -557,6 +803,19 @@ export const useReadingStore = create<ReadingStore>()(
               }
               return e;
             });
+          }
+        }
+        if (!version || version < 4) {
+          if (state.books) {
+            state.books = state.books.map((b: any) => {
+              if (b.lastReadDate === undefined) {
+                return { ...b, lastReadDate: null };
+              }
+              return b;
+            });
+          }
+          if (!state.parentFeedbacks) {
+            state.parentFeedbacks = [];
           }
         }
         return state;

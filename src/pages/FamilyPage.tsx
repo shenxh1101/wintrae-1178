@@ -142,6 +142,9 @@ export default function FamilyPage() {
                       {summary.currentBooks.map((book) => {
                         const pagesRead = getBookPagesReadForUser(book.id, summary.user.id);
                         const pct = book.totalPages > 0 ? Math.min(100, Math.round((pagesRead / book.totalPages) * 100)) : 0;
+                        const showDate = book.lastReadDate
+                          ? `${book.lastReadDate.slice(5)} 读过`
+                          : '还没开读';
                         return (
                           <div key={book.id} className="flex-shrink-0 w-48 p-3 bg-gray-50 rounded-xl">
                             <p className="font-semibold text-sm text-gray-800 truncate">{book.title}</p>
@@ -152,7 +155,10 @@ export default function FamilyPage() {
                                 style={{ width: `${pct}%` }}
                               />
                             </div>
-                            <p className="text-xs text-gray-500 mt-1">{pagesRead}/{book.totalPages}页 ({pct}%)</p>
+                            <div className="flex items-center justify-between mt-1">
+                              <p className="text-xs text-gray-500">{pagesRead}/{book.totalPages}页 ({pct}%)</p>
+                              <p className={`text-[10px] ${book.lastReadDate ? 'text-sky-500' : 'text-gray-400'}`}>{showDate}</p>
+                            </div>
                           </div>
                         );
                       })}

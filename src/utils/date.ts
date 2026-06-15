@@ -82,3 +82,21 @@ export const getStreakDays = (checkinDates: string[]): number => {
 export const isSameDay = (date1: string, date2: string): boolean => {
   return date1 === date2;
 };
+
+export const getWeekStart = (date: Date): string => {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = day === 0 ? 6 : day - 1;
+  d.setDate(d.getDate() - diff);
+  return formatDate(d);
+};
+
+export const getWeekRange = (date: Date): { start: string; end: string } => {
+  const start = parseDate(getWeekStart(date));
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  return {
+    start: formatDate(start),
+    end: formatDate(end),
+  };
+};

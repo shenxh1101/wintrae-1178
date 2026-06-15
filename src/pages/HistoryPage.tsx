@@ -1,12 +1,19 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
-  CalendarDays, Trash2, Edit3, Clock, FileText, MessageSquareHeart, ChevronLeft, ChevronRight, BookOpen, BookMarked,
+  CalendarDays, Trash2, Edit3, Clock, FileText, MessageSquareHeart, ChevronLeft, ChevronRight, BookOpen, BookMarked, Heart, Target, Lightbulb,
 } from 'lucide-react';
 import { useReadingStore } from '@/store/useReadingStore';
-import { formatDisplayDate, formatTime, getToday, formatDate } from '@/utils/date';
+import type { ParentFeedback, FeedbackType } from '@/types';
+import { formatDisplayDate, formatTime, getToday, formatDate, getWeekStart, getWeekRange } from '@/utils/date';
 import Modal from '@/components/Modal';
 
 type ViewMode = 'day' | 'week' | 'book';
+
+const feedbackTypeConfig: Record<FeedbackType, { label: string; icon: any }> = {
+  advice: { label: '建议', icon: Lightbulb },
+  goal: { label: '目标', icon: Target },
+  encouragement: { label: '鼓励', icon: Heart },
+};
 
 export default function HistoryPage() {
   const {
@@ -20,6 +27,8 @@ export default function HistoryPage() {
     removeCheckin,
     updateCheckin,
     getCurrentUser,
+    getFeedbacksByWeekForUser,
+    getFeedbacksByBookForUser,
   } = useReadingStore();
 
   const currentUser = getCurrentUser();
@@ -314,6 +323,37 @@ export default function HistoryPage() {
     );
   };
 
+  const renderFeedbackCard = (fb: ParentFeedback) => {
+    const cfg = feedbackTypeConfig[fb.type];
+    const Icon = cfg.icon;
+    const scopeLabel = fb.bookId
+      ? `《${books.find((x) => x.id === fb.bookId)?.title || '某本书'}》`
+      : fb.weekStart
+        ? `${fb.weekStart.slice(5)} 当周`
+        : '通用';
+    const colorMap: Record<FeedbackType, string> = {
+      advice: 'bg-amber-50 border-amber-200 text-amber-700',
+      goal: 'bg-emerald-50 border-emerald-200 text-emerald-700',
+      encouragement: 'bg-pink-50 border-pink-200 text-pink-700',
+    };
+    const iconColorMap: Record<FeedbackType, string> = {
+      advice: 'text-amber-500',
+      goal: 'text-emerald-500',
+      encouragement: 'text-pink-500',
+    };
+    return (
+      <div key={fb.id} className={`p-3 rounded-xl border ${colorMap[fb.type]}`}>
+        <div className="flex items-center gap-1.5 mb-1.5">
+          <Icon className={`w-3.5 h-3.5 ${iconColorMap[fb.type]}`} />
+          <span className="text-xs font-semibold">{cfg.label}</span>
+          <span className="text-[11px] opacity-70">· {scopeLabel}</span>
+          <span className="ml-auto text-[10px] opacity-60">{formatDisplayDate(fb.createdAt)}</span>
+        </div>
+        <p className="text-sm leading-relaxed opacity-90">{fb.content}</p>
+      </div>
+    );
+  };
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-6">
       <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
@@ -550,6 +590,22 @@ export default function HistoryPage() {
                           </div>
                         </div>
                       )}
+
+                      {isExpanded && (() => {
+                        const weekFeedbacks = getFeedbacksByWeekForUser(week.weekStart, currentUserId || '');
+                        if (weekFeedbacks.length === 0) return null;
+                        return (
+                          <div className="mt-4 pt-4 border-t border-gray-100">
+                            <h4 className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-1.5">
+                              <Heart className="w-4 h-4 text-pink-500" />
+                              家长反馈（{weekFeedbacks.length}条）
+                            </h4>
+                            <div className="space-y-2">
+                              {weekFeedbacks.map((fb) => renderFeedbackCard(fb))}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
                 </div>
@@ -565,6 +621,9 @@ export default function HistoryPage() {
             bookGroups.map(({ book, checkins: bookCheckins, excerpts: bookExcerpts, pagesRead }) => {
               const isExpanded = selectedBookId === book.id;
               const pct = book.totalPages > 0 ? Math.min(100, Math.round((pagesRead / book.totalPages) * 100)) : 0;
+              const bookFeedbacks = isExpanded
+                ? getFeedbacksByBookForUser(book.id, currentUserId || '')
+                : [];
               return (
                 <div key={book.id} className="bg-white rounded-2xl shadow-sm border border-orange-100 overflow-hidden">
                   <button
@@ -610,6 +669,18 @@ export default function HistoryPage() {
                           </h4>
                           <div className="space-y-2 max-h-[200px] overflow-y-auto">
                             {bookExcerpts.map((e) => renderExcerptCard(e))}
+                          </div>
+                        </div>
+                      )}
+
+                      {bookFeedbacks.length > 0 && (
+                        <div className="mt-4 pt-4 border-t border-gray-100">
+                          <h4 className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-1.5">
+                            <Heart className="w-4 h-4 text-pink-500" />
+                            家长反馈（{bookFeedbacks.length}条）
+                          </h4>
+                          <div className="space-y-2">
+                            {bookFeedbacks.map((fb) => renderFeedbackCard(fb))}
                           </div>
                         </div>
                       )}

@@ -7,6 +7,18 @@ export interface UserProfile {
   createdAt: string;
 }
 
+export type FeedbackType = 'advice' | 'goal' | 'encouragement';
+
+export interface ParentFeedback {
+  id: string;
+  userId: string;
+  type: FeedbackType;
+  bookId: string | null;
+  weekStart: string | null;
+  content: string;
+  createdAt: string;
+}
+
 export interface Book {
   id: string;
   userId: string;
@@ -16,6 +28,7 @@ export interface Book {
   totalPages: number;
   dailyGoal: number;
   coverUrl: string;
+  lastReadDate: string | null;
   createdAt: string;
 }
 

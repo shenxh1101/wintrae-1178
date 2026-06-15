@@ -8,6 +8,8 @@ import StatsPage from '@/pages/StatsPage';
 import HistoryPage from '@/pages/HistoryPage';
 import ExcerptsPage from '@/pages/ExcerptsPage';
 import FamilyPage from '@/pages/FamilyPage';
+import ParentPage from '@/pages/ParentPage';
+import MonthlyReviewPage from '@/pages/MonthlyReviewPage';
 import { useReadingStore } from '@/store/useReadingStore';
 import { useEffect } from 'react';
 
@@ -23,6 +25,8 @@ function AppContent() {
         <Routes>
           <Route path="/" element={<Navigate to="/family" replace />} />
           <Route path="/family" element={<FamilyPage />} />
+          <Route path="/parent" element={<ParentPage />} />
+          <Route path="/monthly" element={<MonthlyReviewPage />} />
           <Route path="/books" element={<BooksPage />} />
           <Route path="/checkin" element={<CheckinPage />} />
           <Route path="/history" element={<HistoryPage />} />

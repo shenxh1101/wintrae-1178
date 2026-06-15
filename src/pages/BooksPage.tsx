@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Plus, Filter, BookOpen } from 'lucide-react';
 import { useReadingStore } from '@/store/useReadingStore';
 import BookCard from '@/components/BookCard';
@@ -20,6 +20,20 @@ export default function BooksPage() {
     dailyGoal: '',
     coverUrl: '',
   });
+
+  useEffect(() => {
+    setIsModalOpen(false);
+    setEditingBook(null);
+    setFormData({
+      title: '',
+      author: '',
+      category: BOOK_CATEGORIES[0],
+      totalPages: '',
+      dailyGoal: '',
+      coverUrl: '',
+    });
+    setSelectedCategory(null);
+  }, [currentUserId]);
 
   const currentUser = getCurrentUser();
 
