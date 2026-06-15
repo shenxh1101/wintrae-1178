@@ -1,10 +1,20 @@
-import { useReadingStore } from '@/store/useReadingStore';
+import { useMemo } from 'react';
 import { Trophy, Lock, Sparkles } from 'lucide-react';
+import { useReadingStore } from '@/store/useReadingStore';
 
 export default function RewardsPage() {
-  const { badges } = useReadingStore();
-  const unlockedBadges = badges.filter((b) => b.unlocked);
-  const progress = Math.round((unlockedBadges.length / badges.length) * 100);
+  const { badges, currentUserId, getCurrentUser } = useReadingStore();
+  const currentUser = getCurrentUser();
+
+  const userBadges = useMemo(
+    () => badges.filter((b) => b.userId === currentUserId),
+    [badges, currentUserId]
+  );
+
+  const unlockedBadges = userBadges.filter((b) => b.unlocked);
+  const progress = userBadges.length > 0
+    ? Math.round((unlockedBadges.length / userBadges.length) * 100)
+    : 0;
 
   const recentBadges = [...unlockedBadges]
     .sort((a, b) => new Date(b.unlockedAt!).getTime() - new Date(a.unlockedAt!).getTime())
@@ -14,7 +24,10 @@ export default function RewardsPage() {
     <div className="max-w-6xl mx-auto px-4 py-6">
       <div className="mb-8">
         <h2 className="text-2xl font-bold text-gray-800 mb-2">我的勋章</h2>
-        <p className="text-gray-500">收集勋章，见证你的阅读成长</p>
+        <p className="text-gray-500">
+          {currentUser?.avatar && <span className="mr-1">{currentUser.avatar}</span>}
+          {currentUser?.name || '我'}的勋章墙 · 收集勋章，见证阅读成长
+        </p>
       </div>
 
       <div className="bg-gradient-to-br from-amber-400 via-orange-400 to-orange-500 rounded-3xl p-6 mb-8 text-white shadow-xl">
@@ -27,7 +40,7 @@ export default function RewardsPage() {
               <p className="text-white/80 text-sm">已解锁</p>
               <p className="text-4xl font-bold">
                 {unlockedBadges.length}
-                <span className="text-xl text-white/70"> / {badges.length}</span>
+                <span className="text-xl text-white/70"> / {userBadges.length}</span>
               </p>
               <p className="text-white/80 text-sm mt-1">枚勋章</p>
             </div>
@@ -82,7 +95,7 @@ export default function RewardsPage() {
       <div>
         <h3 className="font-bold text-gray-800 mb-4">勋章墙</h3>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-          {badges.map((badge) => (
+          {userBadges.map((badge) => (
             <div
               key={badge.id}
               className={`group relative rounded-2xl p-5 text-center transition-all duration-300 ${
@@ -112,11 +125,7 @@ export default function RewardsPage() {
               >
                 {badge.name}
               </p>
-              <p
-                className={`text-xs ${
-                  badge.unlocked ? 'text-gray-500' : 'text-gray-400'
-                }`}
-              >
+              <p className={`text-xs ${badge.unlocked ? 'text-gray-500' : 'text-gray-400'}`}>
                 {badge.condition}
               </p>
 

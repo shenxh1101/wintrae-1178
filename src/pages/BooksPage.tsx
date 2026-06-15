@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Plus, Filter, BookOpen } from 'lucide-react';
 import { useReadingStore } from '@/store/useReadingStore';
 import BookCard from '@/components/BookCard';
@@ -7,7 +7,7 @@ import type { Book } from '@/types';
 import { BOOK_CATEGORIES } from '@/types';
 
 export default function BooksPage() {
-  const { books, addBook, updateBook, removeBook } = useReadingStore();
+  const { books, currentUserId, addBook, updateBook, removeBook, getCurrentUser } = useReadingStore();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingBook, setEditingBook] = useState<Book | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -20,6 +20,13 @@ export default function BooksPage() {
     dailyGoal: '',
     coverUrl: '',
   });
+
+  const currentUser = getCurrentUser();
+
+  const userBooks = useMemo(
+    () => books.filter((b) => b.userId === currentUserId),
+    [books, currentUserId]
+  );
 
   const openAddModal = () => {
     setEditingBook(null);
@@ -76,18 +83,19 @@ export default function BooksPage() {
   };
 
   const filteredBooks = selectedCategory
-    ? books.filter((b) => b.category === selectedCategory)
-    : books;
+    ? userBooks.filter((b) => b.category === selectedCategory)
+    : userBooks;
 
   const categories = ['全部', ...BOOK_CATEGORIES];
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-800">我的书单</h2>
           <p className="text-gray-500 mt-1">
-            共 {books.length} 本书
+            {currentUser?.avatar && <span className="mr-1">{currentUser.avatar}</span>}
+            {currentUser?.name || '我的'}书单 · 共 {userBooks.length} 本书
             {selectedCategory && ` · ${selectedCategory}`}
           </p>
         </div>
@@ -126,12 +134,14 @@ export default function BooksPage() {
             <BookOpen className="w-12 h-12 text-orange-300" />
           </div>
           <h3 className="text-lg font-semibold text-gray-700 mb-2">
-            {books.length === 0 ? '还没有添加图书' : '该分类暂无图书'}
+            {userBooks.length === 0 ? '还没有添加图书' : '该分类暂无图书'}
           </h3>
           <p className="text-gray-500 mb-6">
-            {books.length === 0 ? '点击右上角"添加图书"开始你的阅读之旅吧！' : '试试选择其他分类或添加新图书'}
+            {userBooks.length === 0
+              ? '点击右上角"添加图书"开始你的阅读之旅吧！'
+              : '试试选择其他分类或添加新图书'}
           </p>
-          {books.length === 0 && (
+          {userBooks.length === 0 && (
             <button
               onClick={openAddModal}
               className="px-6 py-2.5 bg-orange-500 text-white font-bold rounded-full hover:bg-orange-600 transition-colors"
@@ -186,25 +196,23 @@ export default function BooksPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              分类
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">分类</label>
             <select
               value={formData.category}
               onChange={(e) => setFormData({ ...formData, category: e.target.value })}
               className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 transition-all bg-white"
             >
               {BOOK_CATEGORIES.map((cat) => (
-                <option key={cat} value={cat}>{cat}</option>
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
               ))}
             </select>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                总页数
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">总页数</label>
               <input
                 type="number"
                 min="1"
@@ -215,9 +223,7 @@ export default function BooksPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                每天目标页数
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">每天目标页数</label>
               <input
                 type="number"
                 min="1"

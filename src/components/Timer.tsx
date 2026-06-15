@@ -1,16 +1,36 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import { Play, Pause, RotateCcw } from 'lucide-react';
 import { formatTimerDisplay } from '@/utils/date';
 
 interface TimerProps {
   onTimeUpdate?: (seconds: number) => void;
-  initialSeconds?: number;
+  resetKey?: string | number;
 }
 
-export default function Timer({ onTimeUpdate, initialSeconds = 0 }: TimerProps) {
-  const [seconds, setSeconds] = useState(initialSeconds);
+export interface TimerHandle {
+  reset: () => void;
+  getSeconds: () => number;
+}
+
+const Timer = forwardRef<TimerHandle, TimerProps>(({ onTimeUpdate, resetKey }, ref) => {
+  const [seconds, setSeconds] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const intervalRef = useRef<number | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    reset: () => {
+      setIsRunning(false);
+      setSeconds(0);
+      onTimeUpdate?.(0);
+    },
+    getSeconds: () => seconds,
+  }));
+
+  useEffect(() => {
+    setIsRunning(false);
+    setSeconds(0);
+    onTimeUpdate?.(0);
+  }, [resetKey]);
 
   useEffect(() => {
     if (isRunning) {
@@ -93,4 +113,7 @@ export default function Timer({ onTimeUpdate, initialSeconds = 0 }: TimerProps) 
       </p>
     </div>
   );
-}
+});
+
+Timer.displayName = 'Timer';
+export default Timer;
